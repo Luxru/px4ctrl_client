@@ -71,11 +71,3 @@ target_link_libraries(px4client
   PUBLIC cppzmq
   PUBLIC spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
 )
-
-add_executable(demo src/example.cpp)
-target_link_libraries(demo
-  PUBLIC imgui
-  PUBLIC yaml-cpp
-  PUBLIC cppzmq
-  PUBLIC spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
-)
