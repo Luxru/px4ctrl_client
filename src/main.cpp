@@ -28,7 +28,8 @@ static void glfw_error_callback(int error, const char* description)
 
 void sigintHandler( int sig ) {
     spdlog::info( "[px4ctrl_gcs] exit..." );
-    glfwDestroyWindow(window);
+    // close
+    glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
 int main(int argc, char* argv[]){
