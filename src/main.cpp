@@ -9,7 +9,6 @@
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
 #include <csignal>
-#include <cstdlib>
 #include <spdlog/logger.h>
 #include <spdlog/spdlog.h>
 #include <iostream>
