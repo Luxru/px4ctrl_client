@@ -165,8 +165,8 @@ namespace  px4ctrl{
 
 
             //velocity in body frame
-            const double velocity_xy = 0.5; // TODO change velocity in config
-            const double velocity_z = 0.5;
+            const double velocity_xy = 1; // TODO change velocity in config
+            const double velocity_z =  0.2;
             const double velocity_yaw = 2;// ~120 degree/s
             for(const auto& elem:server_data_map){
                 const uint8_t id = elem.first;
@@ -184,30 +184,38 @@ namespace  px4ctrl{
                         {
                             double yaw = to_yaw(hover_quat);
                             //first, get veclocity in world frame
-                            std::array<double,3> vel_body = {velocity_xy,velocity_xy,velocity_z};//body frame
+                            std::array<double,3> vel_body_x = {velocity_xy,0,0};//body frame
+                            std::array<double,3> vel_body_y = {0,velocity_xy,0};//body frame
                             std::array<double, 4> quat = {drone.quat[0],drone.quat[1],drone.quat[2],drone.quat[3]};
-                            auto vel_world = q_rot(quat, vel_body);
+                            auto vel_world_x = q_rot(quat, vel_body_x);
+                            auto vel_world_y = q_rot(quat, vel_body_y);
                             // TODO change velocity in config
                             bool hover_pos_changed = false;
                             const double delta_time_frame = io.DeltaTime;
                             if(ImGui::IsKeyPressed(ImGuiKey_W)){
                                 spdlog::info("W key pressed");
-                                hover_pos[0] += vel_world[0]*delta_time_frame;
+                                hover_pos[0] += vel_world_x[0]*delta_time_frame;
+                                hover_pos[1] += vel_world_x[1]*delta_time_frame;
                                 hover_pos_changed = true;
+                            }else{
+                                // TODO control by velocity maybe better
                             }
                             if(ImGui::IsKeyPressed(ImGuiKey_S)){
                                 spdlog::info("S key pressed");
-                                hover_pos[0] -= vel_world[0]*delta_time_frame;
+                                hover_pos[0] -= vel_world_x[0]*delta_time_frame;
+                                hover_pos[1] -= vel_world_x[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
                             if(ImGui::IsKeyPressed(ImGuiKey_A)){
                                 spdlog::info("A key pressed");
-                                hover_pos[1] += vel_world[1]*delta_time_frame;
+                                hover_pos[0] += vel_world_y[0]*delta_time_frame;
+                                hover_pos[1] += vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
                             if(ImGui::IsKeyPressed(ImGuiKey_D)){
                                 spdlog::info("D key pressed");
-                                hover_pos[1] -= vel_world[1]*delta_time_frame;
+                                hover_pos[0] -= vel_world_y[0]*delta_time_frame;
+                                hover_pos[1] -= vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
                             if(ImGui::IsKeyPressed(ImGuiKey_Q)){
@@ -268,7 +276,6 @@ namespace  px4ctrl{
                                 payload.timestamp = to_uint64(clock::now());
                                 px4_client.pub_client(payload);
                             }
-
                         }
                     }else{
                         // Red Text
