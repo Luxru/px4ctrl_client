@@ -1,11 +1,13 @@
 #include "client.h"
 #include "datas.h"
+#include "imgui_internal.h"
 #include "types.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <imgui.h>
-#include <ratio>
 #include <vector>
 #include <zmq_addon.hpp>
 
@@ -225,12 +227,12 @@ namespace  px4ctrl{
                                 hover_pos[1] -= vel_world_x[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if(ImGui::IsKeyDown(ImGuiKey_A)){
+                            if(ImGui::IsKeyDown(ImGuiKey_D)){
                                 hover_pos[0] += vel_world_y[0]*delta_time_frame;
                                 hover_pos[1] += vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if(ImGui::IsKeyDown(ImGuiKey_D)){
+                            if(ImGui::IsKeyDown(ImGuiKey_A)){
                                 hover_pos[0] -= vel_world_y[0]*delta_time_frame;
                                 hover_pos[1] -= vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
@@ -294,33 +296,158 @@ namespace  px4ctrl{
                         // Red Text
                         ImGui::TextColored(ImVec4(1,0,0,1), "Inactive");
                     }
-
                     // Two columns
-                    ImGui::Columns(2);
-                    ImGui::Text("FSM Status: %s %s %s",Px4CtrlStateName[drone.fsm_state[0]],Px4CtrlStateName[drone.fsm_state[1]],Px4CtrlStateName[drone.fsm_state[2]]);
-                    ImGui::Text("pos: %.2f %.2f %.2f",drone.pos[0],drone.pos[1],drone.pos[2]);
-                    ImGui::Text("vel: %.2f %.2f %.2f",drone.vel[0],drone.vel[1],drone.vel[2]);
-                    ImGui::Text("omega: %.2f %.2f %.2f",drone.omega[0],drone.omega[1],drone.omega[2]);
-                    ImGui::Text("quat: %.2f %.2f %.2f %.2f",drone.quat[0],drone.quat[1],drone.quat[2],drone.quat[3]);
-                    ImGui::Text("battery: %.2f",drone.battery_voltage);
-                    ImGui::Text("L2 Hover pos: %.2f %.2f %.2f",drone.hover_pos[0],drone.hover_pos[1],drone.hover_pos[2]);
-                    ImGui::Text("L2 Hover quat: %.2f %.2f %.2f %.2f",drone.hover_quat[0],drone.hover_quat[1],drone.hover_quat[2],drone.hover_quat[3]);
-                    ImGui::Text("odom hz: %.2f, cmdctrl hz: %.2f",drone.odom_hz,drone.cmdctrl_hz);
-                    ImGui::Text("Last update: %.2f s",timePassedSeconds(from_uint64(drone.timestamp)));
-                    
-                    ImGui::NextColumn();
-                    ImGui::PushID(id);
-                    for(const auto &cmd : command_vec){
-                        if(ImGui::Button(CommandStr[(int)cmd])){
-                            spdlog::info("Recv Command");
-                            ClientPayload payload;
-                            payload.command = cmd;
-                            payload.timestamp = to_uint64(clock::now());
-                            px4_client.pub_client(payload);
+                    if (ImGui::BeginTable("MainCTN", 2, ImGuiTableFlags_Resizable|ImGuiTableFlags_BordersV|ImGuiTableFlags_SizingFixedFit)){
+                        ImGui::TableSetupColumn("stat",ImGuiTableColumnFlags_WidthStretch);
+                        ImGui::TableSetupColumn("cmd");
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        {
+                            ImGui::BeginGroup();
+                            ImGui::Text("L0: ");
+                            ImGui::SameLine();
+                            for(int i=0;i<L0_L1;++i){
+                                if(drone.fsm_state[0]==i){
+                                    // active color
+                                    ImGui::TextColored(ImVec4(0,1,0,1),"%s",Px4CtrlStateName[i]);
+                                }else{
+                                    // not active color
+                                    ImGui::TextDisabled("%s",Px4CtrlStateName[i]);
+                                }
+                                ImGui::SameLine();
+                            }
+                            ImGui::EndGroup();
+                            ImGui::BeginGroup();
+                            ImGui::Text("L1: ");
+                            ImGui::SameLine();
+                            for(int i=L0_L1+1;i<L1_L2;++i){
+                                if(drone.fsm_state[1]==i){
+                                    // active color
+                                    ImGui::TextColored(ImVec4(0,1,0,1),"%s",Px4CtrlStateName[i]);
+                                }else{
+                                    // not active color
+                                    ImGui::TextDisabled("%s",Px4CtrlStateName[i]);
+                                }
+                                ImGui::SameLine();
+                            }
+                            ImGui::EndGroup();
+                            ImGui::BeginGroup();
+                            ImGui::Text("L2: ");
+                            ImGui::SameLine();
+                            for(int i=L1_L2+1;i<END;++i){
+                                if(drone.fsm_state[2]==i){
+                                    // active color
+                                    ImGui::TextColored(ImVec4(0,1,0,1),"%s",Px4CtrlStateName[i]);
+                                }else{
+                                    // not active color
+                                    ImGui::TextDisabled("%s",Px4CtrlStateName[i]);
+                                }
+                                ImGui::SameLine();
+                            }
+                            ImGui::EndGroup();
+                            
+                            ImGui::Text("pos: %.2f %.2f %.2f",drone.pos[0],drone.pos[1],drone.pos[2]);
+                            ImGui::Text("vel: %.2f %.2f %.2f",drone.vel[0],drone.vel[1],drone.vel[2]);
+                            ImGui::Text("omega: %.2f %.2f %.2f",drone.omega[0],drone.omega[1],drone.omega[2]);
+                            ImGui::Text("quat: %.2f %.2f %.2f %.2f",drone.quat[0],drone.quat[1],drone.quat[2],drone.quat[3]);
+                            ImGui::Text("battery: %.2f",drone.battery_voltage);
+                            ImGui::Text("L2 Hover pos: %.2f %.2f %.2f",drone.hover_pos[0],drone.hover_pos[1],drone.hover_pos[2]);
+                            ImGui::Text("L2 Hover quat: %.2f %.2f %.2f %.2f",drone.hover_quat[0],drone.hover_quat[1],drone.hover_quat[2],drone.hover_quat[3]);
+                            ImGui::Text("odom hz: %.2f, cmdctrl hz: %.2f",drone.odom_hz,drone.cmdctrl_hz);
+                            ImGui::Text("Last update: %.2f s",timePassedSeconds(from_uint64(drone.timestamp)));
                         }
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Indent(10.0f); // Add left padding of 10 pixels
+                        ImGui::PushID(id);
+                        for(const auto &cmd : command_vec){
+                            if(ImGui::Button(CommandStr[(int)cmd])){
+                                spdlog::info("Recv Command");
+                                ClientPayload payload;
+                                payload.command = cmd;
+                                payload.timestamp = to_uint64(clock::now());
+                                px4_client.pub_client(payload);
+                            }
+                        }
+                        ImGui::PopID();
+                        // Add popup
+                        static char bufx[32] = "";
+                        static char bufy[32] = ""; 
+                        static char bufz[32] = ""; 
+                        static char bufyaw[32] = ""; 
+                        if (ImGui::Button("SET_HOVER_POSITION")){
+                            ImGui::OpenPopup("SET_HOVER");
+                            std::sprintf(bufx,"%.2f",drone.pos[0]);
+                            std::sprintf(bufy,"%.2f",drone.pos[1]);
+                            std::sprintf(bufz,"%.2f",drone.pos[2]);
+                            std::sprintf(bufyaw,"%.2f",to_yaw(hover_quat));
+                        }
+                        // Always center this window when appearing
+                        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+                        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+                        if (ImGui::BeginPopupModal("SET_HOVER", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+                        {
+                            ImGui::Text("The set position must be less than 1 meter away from the current position.\n Current position: %.2f %.2f %.2f",drone.pos[0],drone.pos[1],drone.pos[2]);
+                            ImGui::Separator();
+                            ImGui::InputText("X", bufx, 32, ImGuiInputTextFlags_CharsDecimal);
+                            ImGui::InputText("Y", bufy, 32, ImGuiInputTextFlags_CharsDecimal);
+                            ImGui::InputText("Z", bufz, 32, ImGuiInputTextFlags_CharsDecimal);
+                            ImGui::InputText("Yaw",bufyaw,32,ImGuiInputTextFlags_CharsDecimal);
+                            // TODO check
+                            double x = std::atof(bufx);
+                            double y = std::atof(bufy);
+                            double z = std::atof(bufz);
+                            double yaw = std::atof(bufyaw);
+                            bool number_valid = !(std::isnan(drone.pos[0])||std::isnan(drone.pos[1])||std::isnan(drone.pos[2])||
+                            std::isnan(x)||std::isnan(y)||std::isnan(z)||std::isnan(yaw));
+                            bool valid = number_valid;
+                            if(number_valid){
+                                valid = std::sqrt(
+                                    std::pow(x-drone.pos[0],2)+
+                                    std::pow(y-drone.pos[1],2)+
+                                    std::pow(z-drone.pos[2],2)
+                                )<=1.0f;
+                            }
+                            if(!valid){
+                                ImGui::TextColored(ImVec4(1,0,0,1),"Invalid Input x,y,z: %2f, %2f, %2f. Dist: %2f",x,y,z,std::sqrt(
+                                    std::pow(x-drone.pos[0],2)+
+                                    std::pow(y-drone.pos[1],2)+
+                                    std::pow(z-drone.pos[2],2)
+                                ));
+                            }
+                            ImGui::BeginDisabled(!valid);
+                            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                                //update hover pos
+                                ClientPayload payload;
+                                payload.command = ClientCommand::CHANGE_HOVER_POS;
+                                payload.timestamp = to_uint64(clock::now());
+                                payload.id = id;
+                                double data[7];
+                                data[0] = x;
+                                data[1] = y;
+                                data[2] = z;
+                                auto new_quat = from_yaw(yaw);
+                                data[3] = new_quat[0];
+                                data[4] = new_quat[1];
+                                data[5] = new_quat[2];
+                                data[6] = new_quat[3];
+                                std::memcpy(payload.data,data,sizeof(data));
+                                px4_client.pub_client(payload);
+                                // check
+                                ImGui::CloseCurrentPopup(); 
+                            }
+                            ImGui::EndDisabled();
+                            ImGui::SetItemDefaultFocus();
+                            ImGui::SameLine();
+                            if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+                            ImGui::EndPopup();
+                        }
+                        ImGui::Unindent(10.0f); // Reset indentation
+                        ImGui::EndTable();
                     }
-                    ImGui::PopID();
-                    ImGui::Columns(1);
+                }
+                //Log panel
+                {
                     //Scroll to bottom log
                     if(ImGui::BeginChild("LogContainer",ImVec2(0,0),true)){
                         for(const auto& log:log_data){
