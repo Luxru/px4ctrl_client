@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <imgui.h>
+#include <ratio>
 #include <vector>
 #include <zmq_addon.hpp>
 
@@ -156,13 +157,28 @@ namespace  px4ctrl{
             if (ImGui::BeginItemTooltip())
             {
                 ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-                ImGui::TextUnformatted("Press W/S/A/D to move drone in XY plane\nPress R/F to move drone in Z axis\nPress Q/E to rotate drone\nPress Space to force hover\nPress J to force disarm");
+                ImGui::TextUnformatted("Press W/S/A/D to move drone in XY plane\nPress R/F to move drone in Z axis\nPress Q/E to rotate drone\nPress Space to force hover\nPress J to force disarm\nPress C to change Control Frame");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
             }
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+            ImGui::SameLine();
+            if(ctrl_in_world){
+                // control in world frame
+                ImGui::TextColored(ImVec4(1,0,0,1), "Control in World Frame");
+            }else{
+                // control in body frame
+                ImGui::TextColored(ImVec4(0,1,0,1), "Control in Body Frame");
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Change Control Frame")){
+                ctrl_in_world = !ctrl_in_world;
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_C)){
+                ctrl_in_world = !ctrl_in_world;
+            }
 
-
+            const double delta_time_frame = io.DeltaTime;
 
             //velocity in body frame
             const double velocity_xy = 1; // TODO change velocity in config
@@ -187,58 +203,55 @@ namespace  px4ctrl{
                             std::array<double,3> vel_body_x = {velocity_xy,0,0};//body frame
                             std::array<double,3> vel_body_y = {0,velocity_xy,0};//body frame
                             std::array<double, 4> quat = {drone.quat[0],drone.quat[1],drone.quat[2],drone.quat[3]};
-                            auto vel_world_x = q_rot(quat, vel_body_x);
-                            auto vel_world_y = q_rot(quat, vel_body_y);
+                            std::array<double,3> vel_world_x,vel_world_y;
+                            if(ctrl_in_world){
+                                //velocity in world frame
+                                vel_world_x = vel_body_x;
+                                vel_world_y = vel_body_y;
+                            }else{
+                                //velocity in body frame
+                                vel_world_x = q_rot(quat, vel_body_x);
+                                vel_world_y = q_rot(quat, vel_body_y);
+                            }
                             // TODO change velocity in config
                             bool hover_pos_changed = false;
-                            const double delta_time_frame = io.DeltaTime;
-                            if(ImGui::IsKeyPressed(ImGuiKey_W)){
-                                spdlog::info("W key pressed");
+                            if(ImGui::IsKeyDown(ImGuiKey_W)){
                                 hover_pos[0] += vel_world_x[0]*delta_time_frame;
                                 hover_pos[1] += vel_world_x[1]*delta_time_frame;
                                 hover_pos_changed = true;
-                            }else{
-                                // TODO control by velocity maybe better
                             }
-                            if(ImGui::IsKeyPressed(ImGuiKey_S)){
-                                spdlog::info("S key pressed");
+                            if(ImGui::IsKeyDown(ImGuiKey_S)){
                                 hover_pos[0] -= vel_world_x[0]*delta_time_frame;
                                 hover_pos[1] -= vel_world_x[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if(ImGui::IsKeyPressed(ImGuiKey_A)){
-                                spdlog::info("A key pressed");
+                            if(ImGui::IsKeyDown(ImGuiKey_A)){
                                 hover_pos[0] += vel_world_y[0]*delta_time_frame;
                                 hover_pos[1] += vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if(ImGui::IsKeyPressed(ImGuiKey_D)){
-                                spdlog::info("D key pressed");
+                            if(ImGui::IsKeyDown(ImGuiKey_D)){
                                 hover_pos[0] -= vel_world_y[0]*delta_time_frame;
                                 hover_pos[1] -= vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if(ImGui::IsKeyPressed(ImGuiKey_Q)){
+                            if(ImGui::IsKeyDown(ImGuiKey_Q)){
                                 // yaw
-                                spdlog::info("Q key pressed");
                                 yaw += velocity_yaw*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if(ImGui::IsKeyPressed(ImGuiKey_E)){
+                            if(ImGui::IsKeyDown(ImGuiKey_E)){
                                 // yaw
-                                spdlog::info("E key pressed");
                                 yaw -= velocity_yaw*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if(ImGui::IsKeyPressed(ImGuiKey_R)){
+                            if(ImGui::IsKeyDown(ImGuiKey_R)){
                                 // z
-                                spdlog::info("R key pressed");
                                 hover_pos[2] += velocity_z*delta_time_frame;
                                 hover_pos_changed = true;
                             }
-                            if (ImGui::IsKeyPressed(ImGuiKey_F)){
+                            if (ImGui::IsKeyDown(ImGuiKey_F)){
                                 // z
-                                spdlog::info("F key pressed");
                                 hover_pos[2] -= velocity_z*delta_time_frame;
                                 hover_pos_changed = true;
                             }
@@ -262,7 +275,7 @@ namespace  px4ctrl{
                             }
 
                             if (ImGui::IsKeyPressed(ImGuiKey_Space)){
-                                spdlog::info("Space key pressed");//force hover
+                                spdlog::debug("Space key pressed");//force hover
                                 ClientPayload payload;
                                 payload.command = ClientCommand::FORCE_HOVER;
                                 payload.timestamp = to_uint64(clock::now());
@@ -270,7 +283,7 @@ namespace  px4ctrl{
                             }
 
                             if (ImGui::IsKeyPressed(ImGuiKey_J)){
-                                spdlog::info("J key pressed");//Force Disarm
+                                spdlog::debug("J key pressed");//Force Disarm
                                 ClientPayload payload;
                                 payload.command = ClientCommand::FORCE_DISARM;
                                 payload.timestamp = to_uint64(clock::now());
@@ -292,6 +305,7 @@ namespace  px4ctrl{
                     ImGui::Text("battery: %.2f",drone.battery_voltage);
                     ImGui::Text("L2 Hover pos: %.2f %.2f %.2f",drone.hover_pos[0],drone.hover_pos[1],drone.hover_pos[2]);
                     ImGui::Text("L2 Hover quat: %.2f %.2f %.2f %.2f",drone.hover_quat[0],drone.hover_quat[1],drone.hover_quat[2],drone.hover_quat[3]);
+                    ImGui::Text("odom hz: %.2f, cmdctrl hz: %.2f",drone.odom_hz,drone.cmdctrl_hz);
                     ImGui::Text("Last update: %.2f s",timePassedSeconds(from_uint64(drone.timestamp)));
                     
                     ImGui::NextColumn();

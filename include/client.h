@@ -38,6 +38,7 @@ namespace ui{
             ImguiClient(Px4Client& px4_client);
             void render_window();
         private:
+            bool ctrl_in_world = false;
             std::vector<ClientCommand> command_vec;
             std::map<uint8_t, ServerPayload> server_data_map;
             Px4DataObserver log_observer,server_observer;
