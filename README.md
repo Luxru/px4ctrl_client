@@ -36,14 +36,14 @@
 git clone https://github.com/CQU-UISC/px4ctrl_client.git
 cd px4ctrl_client
 git submodule update --init --recursive
-mkdir build && build
+mkdir build && cd build
 cmake ..
 make -j4
 ```
 
 <!-- USAGE EXAMPLES -->
 ## Usage
-./px4client -c ../config/zmq.yaml
+`./px4client -c ../config/zmq.yaml`
 
 <!-- ROADMAP -->
 ## Roadmap
