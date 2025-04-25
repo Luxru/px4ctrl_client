@@ -1,6 +1,5 @@
 #include "client.h"
 #include "datas.h"
-#include "imgui_internal.h"
 #include "types.h"
 
 #include <array>
@@ -141,6 +140,7 @@ namespace  px4ctrl{
                 ClientCommand::FORCE_HOVER,
                 ClientCommand::ALLOW_CMD_CTRL,
                 ClientCommand::FORCE_DISARM,
+                ClientCommand::RESTART_FCU,
                 // ClientCommand::CHANGE_HOVER_POS,
             });
 
@@ -192,7 +192,7 @@ namespace  px4ctrl{
                 std::array<double,3> hover_pos = {drone.hover_pos[0],drone.hover_pos[1],drone.hover_pos[2]};
                 std::array<double, 4> hover_quat = {drone.hover_quat[0],drone.hover_quat[1],drone.hover_quat[2],drone.hover_quat[3]};
                 //Window
-                ImGui::PushID(fmt::format("Drone{}",id).c_str());
+                ImGui::PushID(std::format("Drone{}",id).c_str());
                 if(ImGui::BeginChild("DroneContainer",ImVec2(0,0),true)){
                     ImGui::Text("Drone ID: %d",id);
                     // Red Text
@@ -406,7 +406,7 @@ namespace  px4ctrl{
                                     std::pow(x-drone.pos[0],2)+
                                     std::pow(y-drone.pos[1],2)+
                                     std::pow(z-drone.pos[2],2)
-                                )<=1.0f;
+                                )<=1.5f;
                             }
                             if(!valid){
                                 ImGui::TextColored(ImVec4(1,0,0,1),"Invalid Input x,y,z: %2f, %2f, %2f. Dist: %2f",x,y,z,std::sqrt(

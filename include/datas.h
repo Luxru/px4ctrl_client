@@ -48,6 +48,7 @@ enum class ClientCommand
     ALLOW_CMD_CTRL,
     FORCE_DISARM,
     CHANGE_HOVER_POS,
+    RESTART_FCU
 };
 
 const char* const CommandStr[] = {
@@ -56,6 +57,7 @@ const char* const CommandStr[] = {
     "TAKEOFF",        "LAND",
     "FORCE_HOVER",    "ALLOW_CMD_CTRL",
     "FORCE_DISARM",   "CHANGE_HOVER_POS",
+    "RESTART_FCU"
 };
 
 struct ClientPayload
@@ -115,10 +117,10 @@ struct ZmqParas{
             paras.client_topic = config["client_topic"].as<std::string>();
             paras.log_topic = config["log_topic"].as<std::string>();
 
-            paras.xpub_bind = fmt::format("tcp://*:{}",paras.xpub_endpoint_port);
-            paras.xsub_bind = fmt::format("tcp://*:{}",paras.xsub_endpoint_port);
-            paras.xpub_url = fmt::format("tcp://{}:{}",paras.xpub_endpoint_ip,paras.xpub_endpoint_port);
-            paras.xsub_url = fmt::format("tcp://{}:{}",paras.xsub_endpoint_ip,paras.xsub_endpoint_port);
+            paras.xpub_bind = std::format("tcp://*:{}",paras.xpub_endpoint_port);
+            paras.xsub_bind = std::format("tcp://*:{}",paras.xsub_endpoint_port);
+            paras.xpub_url = std::format("tcp://{}:{}",paras.xpub_endpoint_ip,paras.xpub_endpoint_port);
+            paras.xsub_url = std::format("tcp://{}:{}",paras.xsub_endpoint_ip,paras.xsub_endpoint_port);
         }
         catch (const YAML::BadFile& e)
         {
