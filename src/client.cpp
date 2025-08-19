@@ -159,7 +159,7 @@ namespace  px4ctrl{
             if (ImGui::BeginItemTooltip())
             {
                 ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
-                ImGui::TextUnformatted("Press W/S/A/D to move drone in XY plane\nPress R/F to move drone in Z axis\nPress Q/E to rotate drone\nPress Space to force hover\nPress J to force disarm\nPress C to change Control Frame");
+                ImGui::TextUnformatted("Press W/S/A/D to move drone in XY plane\nPress R/F to move drone in Z axis\nPress Q/E to rotate drone\nPress Space to force hover\nPress J to force disarm\nPress L to land\nPress C to change Control Frame");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
             }
@@ -228,13 +228,13 @@ namespace  px4ctrl{
                                 hover_pos_changed = true;
                             }
                             if(ImGui::IsKeyDown(ImGuiKey_D)){
-                                hover_pos[0] += vel_world_y[0]*delta_time_frame;
-                                hover_pos[1] += vel_world_y[1]*delta_time_frame;
+                                hover_pos[0] -= vel_world_y[0]*delta_time_frame;
+                                hover_pos[1] -= vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
                             if(ImGui::IsKeyDown(ImGuiKey_A)){
-                                hover_pos[0] -= vel_world_y[0]*delta_time_frame;
-                                hover_pos[1] -= vel_world_y[1]*delta_time_frame;
+                                hover_pos[0] += vel_world_y[0]*delta_time_frame;
+                                hover_pos[1] += vel_world_y[1]*delta_time_frame;
                                 hover_pos_changed = true;
                             }
                             if(ImGui::IsKeyDown(ImGuiKey_Q)){
@@ -288,6 +288,14 @@ namespace  px4ctrl{
                                 spdlog::debug("J key pressed");//Force Disarm
                                 ClientPayload payload;
                                 payload.command = ClientCommand::FORCE_DISARM;
+                                payload.timestamp = to_uint64(clock::now());
+                                px4_client.pub_client(payload);
+                            }
+
+                            if (ImGui::IsKeyPressed(ImGuiKey_L)){
+                                spdlog::debug("L key pressed");//Land
+                                ClientPayload payload;
+                                payload.command = ClientCommand::LAND;
                                 payload.timestamp = to_uint64(clock::now());
                                 px4_client.pub_client(payload);
                             }
