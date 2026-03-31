@@ -1,85 +1,141 @@
 #pragma once
+
+#if defined(__linux__) && !defined(ZENOH_LINUX)
+#define ZENOH_LINUX 1
+#endif
+
 #include "datas.h"
 #include "types.h"
 
+#include <imgui.h>
 #include <array>
+#include <atomic>
+#include <cfloat>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <mutex>
+#include <spdlog/common.h>
 #include <string>
-#include <thread>
 #include <vector>
+#include <zenoh.h>
 
-namespace px4ctrl{
-namespace ui{
-    class Px4Client{
-        public:
-            Px4Client(
-                zmq::context_t& context,
-                const ZmqParas& paras
-            );
-            ~Px4Client();
-            Px4Data<ServerPayload> server_data;
-            Px4Data<std::string> log_data;
-            void pub_client(const ClientPayload& payload);
-        private:
-            const ZmqParas& paras;
-            zmq::socket_t client_pub,server_sub, log_sub;
+namespace px4ctrl {
+namespace ui {
 
-            std::mutex mtx;
-            bool ok = true;
-            std::thread recv_server_thread, recv_log_thread;
-            void recv_server();
-            void recv_log();
-    };
+class Px4Client {
+public:
+  struct LogEntry {
+    int level = static_cast<int>(spdlog::level::info);
+    std::string text;
+  };
 
-    class ImguiClient{
-        public:
-            ImguiClient(Px4Client& px4_client);
-            void render_window();
-        private:
-            bool ctrl_in_world = false;
-            std::vector<ClientCommand> command_vec;
-            std::map<uint8_t, ServerPayload> server_data_map;
-            Px4DataObserver log_observer,server_observer;
-            std::vector<std::string> log_data;
-            Px4Client& px4_client;
-    };
+  explicit Px4Client(const TransportParas &paras);
+  ~Px4Client();
 
-    inline std::array<double, 4> q_inv(const std::array<double, 4>& q){
-        // q = [w, x, y, z]
-        return {q[0], -q[1], -q[2], -q[3]};
-    }
-    
-    inline std::array<double, 4> q_mul(const std::array<double, 4>& q1, const std::array<double, 4>& q2){
-        //return q1*q2
-        // q = [w, x, y, z]
-        return {
-            q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q2[2] - q1[3]*q2[3],
-            q1[0]*q2[1] + q1[1]*q2[0] + q1[2]*q2[3] - q1[3]*q2[2],
-            q1[0]*q2[2] - q1[1]*q2[3] + q1[2]*q2[0] + q1[3]*q2[1],
-            q1[0]*q2[3] + q1[1]*q2[2] - q1[2]*q2[1] + q1[3]*q2[0]
-        };
-    }
-    
-    inline std::array<double, 3> q_rot(const std::array<double, 4>& q, const std::array<double, 3>& v){
-        //return q*v*q_inv
-        // q = [w, x, y, z]
-        std::array<double, 4> q_v = {0, v[0], v[1], v[2]};
-        std::array<double, 4> q_inv_v = q_mul(q, q_mul(q_v, q_inv(q)));
-        return {q_inv_v[1], q_inv_v[2], q_inv_v[3]};
-    }
+  Px4Data<ServerPayload> server_data;
+  Px4Data<LogEntry> log_data;
+  void pub_client(const ClientPayload &payload);
+  [[nodiscard]] const TransportParas &transport_paras() const { return paras_; }
 
-    inline double to_yaw(const std::array<double, 4>& q){
-        // q = [w, x, y, z]
-        // atan2(2.0f * (w * z + x * y), w * w + x * x - y * y - z * z);
-        return std::atan2(2.0f * (q[0] * q[3] + q[1] * q[2]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
-    }
+private:
+  TransportParas paras_;
+  z_owned_session_t session_{};
+  z_owned_publisher_t client_pub_{};
+  z_owned_subscriber_t server_sub_{};
+  z_owned_subscriber_t log_sub_{};
 
-    inline std::array<double, 4> from_yaw(double yaw){
-        // The quaternion representation of rotation is a variation on axis and angle. So if you rotate by r radians around axis x, y, z, then your quaternion q is:
-        // q = [cos(r/2), sin(r/2)x, sin(r/2)y, sin(r/2)z]
-        return {std::cos(yaw/2), 0, 0, std::sin(yaw/2)};
-    }
+  std::atomic<bool> ok_{false};
+
+  bool init_zenoh();
+  void close_zenoh();
+
+  static void server_sample_callback(z_loaned_sample_t *sample, void *context);
+  static void log_sample_callback(z_loaned_sample_t *sample, void *context);
+};
+
+class ImguiClient {
+public:
+  explicit ImguiClient(Px4Client &px4_client);
+  void render_window();
+
+private:
+  struct TelemetryHistory {
+    std::deque<float> x;
+    std::deque<float> y;
+    std::deque<float> z;
+    std::deque<ImVec2> xy_trace;
+
+    std::deque<float> thrust;
+    std::deque<float> omega_x;
+    std::deque<float> omega_y;
+    std::deque<float> omega_z;
+    std::deque<ImVec2> omega_xy_trace;
+
+    void push(const ServerPayload &p, size_t max_points);
+  };
+
+  struct SafetyEditorState {
+    float geofence_min[3] = {-10.0F, -10.0F, -1.0F};
+    float geofence_max[3] = {10.0F, 10.0F, 6.0F};
+    float max_roll_deg = -1.0F;
+    float max_pitch_deg = -1.0F;
+    float max_yaw_deg = -1.0F;
+    bool enable_geofence = false;
+    bool enable_attitude_fence = false;
+    bool initialized_from_telemetry = false;
+  };
+
+  std::vector<ClientCommand> command_vec_;
+  std::map<uint8_t, ServerPayload> server_data_map_;
+  std::map<uint8_t, TelemetryHistory> history_map_;
+  std::map<uint8_t, SafetyEditorState> safety_editor_map_;
+  std::map<uint8_t, std::array<float, 4>> hover_input_map_;
+  Px4DataObserver log_observer_;
+  Px4DataObserver server_observer_;
+  std::deque<Px4Client::LogEntry> log_data_;
+
+  Px4Client &px4_client_;
+  bool ctrl_in_world_ = false;
+  bool keyboard_listener_active_ = false;
+  int keyboard_target_id_ = -1;
+  float keyboard_vel_xy_ = 1.0F;
+  float keyboard_vel_z_ = 0.2F;
+  float keyboard_vel_yaw_ = 2.0F;
+
+  static bool valid_limit(float limit);
+  static void trim_deque(std::deque<float> &q, size_t max_points);
+  static void trim_deque(std::deque<ImVec2> &q, size_t max_points);
+  static void render_line_plot(const char *label, const std::deque<float> &series,
+                               ImVec2 size, float sample_hz,
+                               float min_v = FLT_MAX, float max_v = FLT_MAX);
+  static void render_xy_plot(const char *label, const std::deque<ImVec2> &series,
+                             ImVec2 size, const float *geofence_min = nullptr,
+                             const float *geofence_max = nullptr,
+                             bool geofence_enabled = false);
+
+  void render_status_panel(uint8_t id, const ServerPayload &drone);
+  void render_command_panel(uint8_t id, const ServerPayload &drone);
+  void render_safety_panel(uint8_t id, const ServerPayload &drone);
+  void render_plot_panel(uint8_t id, const ServerPayload &drone);
+  void handle_keyboard_control();
+  void publish_heartbeat();
+  void send_hover_target(uint8_t id, const std::array<float, 4> &hover);
+  void send_simple_command(uint8_t id, ClientCommand cmd);
+
+  clock::time_point last_heartbeat_time_ = clock::now();
+  double heartbeat_interval_ms_ = 200.0;
+  mutable std::mutex data_mutex_;
+};
+
+inline std::array<double, 4> from_yaw(double yaw) {
+  return {std::cos(yaw / 2), 0, 0, std::sin(yaw / 2)};
 }
+
+inline double to_yaw(const std::array<double, 4> &q) {
+  return std::atan2(2.0 * (q[0] * q[3] + q[1] * q[2]),
+                    q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
 }
+
+} // namespace ui
+} // namespace px4ctrl

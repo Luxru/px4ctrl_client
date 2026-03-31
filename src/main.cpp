@@ -9,11 +9,9 @@
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
 
 #include <csignal>
+#include <iostream>
 #include <spdlog/logger.h>
 #include <spdlog/spdlog.h>
-#include <iostream>
-#include <zmq.hpp>
-#include <zmq_addon.hpp>
 
 #include "client.h"
 
@@ -32,7 +30,6 @@ void sigintHandler( int sig ) {
 }
 
 int main(int argc, char* argv[]){
-    // 检查参数数量
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " -c <config_file>" << std::endl;
         return 1;
@@ -41,7 +38,6 @@ int main(int argc, char* argv[]){
     std::string flag = argv[1];
     std::string config_file;
 
-    // 检查参数是否为 -c
     if (flag == "-c") {
         config_file = argv[2];
         std::cout << "Config directory: " << config_file << std::endl;
@@ -55,9 +51,6 @@ int main(int argc, char* argv[]){
         std::cerr << "Config file does not exist: " << config_file << std::endl;
         return 1;
     }
-    //zmq context
-    zmq::context_t ctx(1);
-
     signal( SIGINT, sigintHandler );
     //set up
     glfwSetErrorCallback(glfw_error_callback);
@@ -99,9 +92,9 @@ int main(int argc, char* argv[]){
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-    //Px4Client
-    px4ctrl::ui::ZmqParas paras = px4ctrl::ui::ZmqParas::load(config_file);
-    px4ctrl::ui::Px4Client px4_client(ctx,paras);
+    // Px4Client (Zenoh)
+    px4ctrl::ui::TransportParas paras = px4ctrl::ui::TransportParas::load(config_file);
+    px4ctrl::ui::Px4Client px4_client(paras);
     px4ctrl::ui::ImguiClient imgui_client(px4_client);
 
     //clear_color = Imgui background color
@@ -145,7 +138,5 @@ int main(int argc, char* argv[]){
 
     glfwDestroyWindow(window);
     glfwTerminate();
-    ctx.shutdown();
-    ctx.close();
     return  0;
 }

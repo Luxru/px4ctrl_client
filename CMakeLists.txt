@@ -20,15 +20,12 @@ elseif(UNIX)
     message("Building for Linux")
     find_package(OpenGL REQUIRED)
     find_package(glfw3 REQUIRED)
+    find_package(PkgConfig REQUIRED)
 elseif(WIN32)
     message(FATAL_ERROR "Windows is not supported")
 endif()
 find_package(spdlog REQUIRED)
-
-add_subdirectory(modules/yaml-cpp)
-add_subdirectory(modules/libzmq)
-option(CPPZMQ_BUILD_TESTS "" OFF)
-add_subdirectory(modules/cppzmq)
+pkg_check_modules(ZENOHC REQUIRED zenohc)
 
 set(IMGUI_DIR modules/imgui)
 
@@ -36,6 +33,7 @@ include_directories(
     include
     ${IMGUI_DIR} 
     ${IMGUI_DIR}/backends
+    ${ZENOHC_INCLUDE_DIRS}
 )
 
 add_library(imgui
@@ -67,7 +65,11 @@ add_executable(px4client src/main.cpp src/client.cpp)
 
 target_link_libraries(px4client
   PUBLIC imgui
-  PUBLIC yaml-cpp
-  PUBLIC cppzmq
+  PUBLIC ${ZENOHC_LIBRARIES}
   PUBLIC spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>
 )
+target_link_directories(px4client PRIVATE ${ZENOHC_LIBRARY_DIRS})
+target_compile_definitions(px4client PRIVATE ZENOH_LINUX)
+foreach(_libdir IN LISTS ZENOHC_LIBRARY_DIRS)
+  target_link_options(px4client PRIVATE "-Wl,-rpath,${_libdir}")
+endforeach()

@@ -17,7 +17,7 @@
 
 ## About
 
-A lightweight UAV ground control station built with **ZeroMQ** and **Dear ImGui**. This client is designed to interface seamlessly with the onboard `px4ctrl` node, providing low-latency control and monitoring capabilities.
+A lightweight UAV ground control station built with **Zenoh** and **Dear ImGui**. This client is designed to interface seamlessly with the onboard `px4ctrl` node, providing low-latency control and monitoring capabilities.
 
 **Key Features:**
 * **Basic Operations:** Arming, disarming, and hovering control.
@@ -59,10 +59,10 @@ Ensure you have the following dependencies installed before building the project
 
 <!-- USAGE EXAMPLES -->
 ### Usage
-Run the client by specifying the ZeroMQ configuration file:
+Run the client by specifying the transport configuration file:
 
 ```bash
-./px4client -c ../config/zmq.yaml
+./px4client -c ../config/zenoh.json
 ```
 
 ![image](images/image.png)
