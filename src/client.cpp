@@ -402,13 +402,9 @@ ImguiClient::ImguiClient(Px4Client &px4_client) : px4_client_(px4_client) {
     server_data_map_[data.id] = data;
     history_map_[data.id].push(data, 1200);
     if (hover_input_map_.find(data.id) == hover_input_map_.end()) {
-      hover_input_map_[data.id] = {
-          data.hover_pos[0],
-          data.hover_pos[1],
-          data.hover_pos[2],
-          static_cast<float>(to_yaw({data.hover_quat[0], data.hover_quat[1],
-                                     data.hover_quat[2], data.hover_quat[3]})),
-      };
+      hover_input_map_[data.id] = {data.pos[0], data.pos[1], data.pos[2],
+                                    static_cast<float>(to_yaw({data.quat[0], data.quat[1],
+                                                               data.quat[2], data.quat[3]}))};
     }
 
     auto &safety = safety_editor_map_[data.id];
@@ -807,7 +803,11 @@ void ImguiClient::render_command_panel(uint8_t id, const ServerPayload &drone) {
   ImGui::SameLine();
   if (ImGui::SmallButton(active ? "Stop" : "Start")) {
     if (active) { keyboard_listener_active_ = false; keyboard_target_id_ = -1; }
-    else { keyboard_listener_active_ = true; keyboard_target_id_ = id; }
+    else {
+      keyboard_listener_active_ = true; keyboard_target_id_ = id;
+      std::lock_guard<std::mutex> lock(data_mutex_);
+      hover_input_map_.erase(id);
+    }
   }
   ImGui::SameLine();
   ImGui::TextUnformatted(ctrl_in_world_ ? "WORLD" : "BODY");
@@ -834,11 +834,9 @@ void ImguiClient::render_command_panel(uint8_t id, const ServerPayload &drone) {
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     if (hover_input_map_.find(id) == hover_input_map_.end()) {
-      hover_input_map_[id] = {
-          drone.hover_pos[0], drone.hover_pos[1], drone.hover_pos[2],
-          static_cast<float>(to_yaw({drone.hover_quat[0], drone.hover_quat[1],
-                                     drone.hover_quat[2], drone.hover_quat[3]})),
-      };
+      hover_input_map_[id] = {drone.pos[0], drone.pos[1], drone.pos[2],
+                               static_cast<float>(to_yaw({drone.quat[0], drone.quat[1],
+                                                          drone.quat[2], drone.quat[3]}))};
     }
     h = hover_input_map_[id];
   }
@@ -958,13 +956,9 @@ void ImguiClient::handle_keyboard_control() {
     drone = drone_it->second;
 
     if (hover_input_map_.find(target_id) == hover_input_map_.end()) {
-      hover_input_map_[target_id] = {
-          drone.hover_pos[0],
-          drone.hover_pos[1],
-          drone.hover_pos[2],
-          static_cast<float>(to_yaw({drone.hover_quat[0], drone.hover_quat[1],
-                                     drone.hover_quat[2], drone.hover_quat[3]})),
-      };
+      hover_input_map_[target_id] = {drone.pos[0], drone.pos[1], drone.pos[2],
+                                      static_cast<float>(to_yaw({drone.quat[0], drone.quat[1],
+                                                                 drone.quat[2], drone.quat[3]}))};
     }
     hover = hover_input_map_[target_id];
   }
