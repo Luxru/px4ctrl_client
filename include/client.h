@@ -86,7 +86,6 @@ private:
     bool initialized_from_telemetry = false;
   };
 
-  std::vector<ClientCommand> command_vec_;
   std::map<uint8_t, ServerPayload> server_data_map_;
   std::map<uint8_t, TelemetryHistory> history_map_;
   std::map<uint8_t, SafetyEditorState> safety_editor_map_;
@@ -99,6 +98,8 @@ private:
   bool ctrl_in_world_ = false;
   bool keyboard_listener_active_ = false;
   int keyboard_target_id_ = -1;
+  bool show_disarm_confirm_ = false;
+  int disarm_confirm_target_id_ = -1;
   float keyboard_vel_xy_ = 1.0F;
   float keyboard_vel_z_ = 0.2F;
   float keyboard_vel_yaw_ = 2.0F;
@@ -108,16 +109,21 @@ private:
   static void trim_deque(std::deque<ImVec2> &q, size_t max_points);
   static void render_line_plot(const char *label, const std::deque<float> &series,
                                ImVec2 size, float sample_hz,
-                               float min_v = FLT_MAX, float max_v = FLT_MAX);
+                               float min_v = FLT_MAX, float max_v = FLT_MAX,
+                               ImU32 line_color = 0);
   static void render_xy_plot(const char *label, const std::deque<ImVec2> &series,
                              ImVec2 size, const float *geofence_min = nullptr,
                              const float *geofence_max = nullptr,
                              bool geofence_enabled = false);
+  static ImU32 PhaseColor(int phase_idx);
+  static void RenderPhaseBadge(int phase_idx);
+  static void RenderOnOffBadge(bool on, const char *label_on, const char *label_off, ImVec2 size = ImVec2(0, 0));
 
   void render_status_panel(uint8_t id, const ServerPayload &drone);
   void render_command_panel(uint8_t id, const ServerPayload &drone);
-  void render_safety_panel(uint8_t id, const ServerPayload &drone);
+  void render_safety_popup(uint8_t id);
   void render_plot_panel(uint8_t id, const ServerPayload &drone);
+  void render_header_bar(const ServerPayload &drone);
   void handle_keyboard_control();
   void publish_heartbeat();
   void send_hover_target(uint8_t id, const std::array<float, 4> &hover);

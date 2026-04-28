@@ -152,6 +152,51 @@ ImVec4 log_color_for_level(const int level) {
 }
 } // namespace
 
+// --- Phase badge colors and rendering ---
+
+ImU32 ImguiClient::PhaseColor(int phase_idx) {
+  switch (static_cast<MissionPhase>(phase_idx)) {
+  case MissionPhase::STANDBY:  return IM_COL32(107, 114, 128, 255); // grey
+  case MissionPhase::TAKEOFF:  return IM_COL32(59, 130, 246, 255);  // blue
+  case MissionPhase::HOVER:    return IM_COL32(16, 185, 129, 255);  // green
+  case MissionPhase::CMD_CTRL: return IM_COL32(6, 182, 212, 255);   // cyan
+  case MissionPhase::LANDING:  return IM_COL32(245, 158, 11, 255);  // amber
+  case MissionPhase::FAILSAFE: return IM_COL32(239, 68, 68, 255);   // red
+  default:                     return IM_COL32(156, 163, 175, 255); // light grey
+  }
+}
+
+void ImguiClient::RenderPhaseBadge(int phase_idx) {
+  const bool valid = phase_idx >= 0 && phase_idx < static_cast<int>(std::size(MissionPhaseName));
+  const char *label = valid ? MissionPhaseName[phase_idx] : "UNKNOWN";
+  ImU32 color = PhaseColor(phase_idx);
+
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  float w = ImGui::CalcTextSize(label).x + 16.0f;
+  float h = ImGui::GetTextLineHeight() + 6.0f;
+  ImVec2 p_min(p.x, p.y);
+  ImVec2 p_max(p.x + w, p.y + h);
+
+  ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, color, 6.0f);
+  ImGui::GetWindowDrawList()->AddText(ImVec2(p.x + 8.0f, p.y + 3.0f),
+                                      IM_COL32(255, 255, 255, 255), label);
+  ImGui::Dummy(ImVec2(w, h));
+}
+
+void ImguiClient::RenderOnOffBadge(bool on, const char *label_on, const char *label_off,
+                                    ImVec2 size) {
+  const char *label = on ? label_on : label_off;
+  ImU32 bg = on ? IM_COL32(16, 185, 129, 255) : IM_COL32(107, 114, 128, 255);
+  if (size.x <= 0) size.x = ImGui::CalcTextSize(label).x + 16.0f;
+  if (size.y <= 0) size.y = ImGui::GetTextLineHeight() + 6.0f;
+
+  ImVec2 pos = ImGui::GetCursorScreenPos();
+  ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), bg, 4.0f);
+  ImGui::GetWindowDrawList()->AddText(ImVec2(pos.x + 8.0f, pos.y + 3.0f),
+                                      IM_COL32(255, 255, 255, 255), label);
+  ImGui::Dummy(size);
+}
+
 Px4Client::Px4Client(const TransportParas &paras) : paras_(paras) {
   if (paras_.backend != CommBackend::ZENOH) {
     throw std::runtime_error("Only zenoh backend is supported");
@@ -380,13 +425,6 @@ ImguiClient::ImguiClient(Px4Client &px4_client) : px4_client_(px4_client) {
       safety.initialized_from_telemetry = true;
     }
   });
-
-  command_vec_ = {
-      ClientCommand::ARM,          ClientCommand::ENTER_OFFBOARD,
-      ClientCommand::EXIT_OFFBOARD, ClientCommand::TAKEOFF,
-      ClientCommand::LAND,         ClientCommand::FORCE_HOVER,
-      ClientCommand::ALLOW_CMD_CTRL, ClientCommand::FORCE_DISARM,
-  };
 }
 
 bool ImguiClient::valid_limit(float limit) {
@@ -407,7 +445,8 @@ void ImguiClient::trim_deque(std::deque<ImVec2> &q, size_t max_points) {
 
 void ImguiClient::render_line_plot(const char *label, const std::deque<float> &series,
                                    ImVec2 size, float sample_hz, float min_v,
-                                   float max_v) {
+                                   float max_v, ImU32 line_color) {
+  if (line_color == 0) line_color = IM_COL32(80, 220, 120, 255);
   if (series.empty()) {
     ImGui::Text("%s: no data", label);
     return;
@@ -453,7 +492,7 @@ void ImguiClient::render_line_plot(const char *label, const std::deque<float> &s
   };
 
   sample_hz = std::max(1.0F, sample_hz);
-  const int kTickCount = (plot_h >= 90.0F) ? 4 : 3;
+  const int kTickCount = (plot_h >= 130.0F) ? 4 : 3;
   for (int i = 0; i <= kTickCount; ++i) {
     const float t = static_cast<float>(i) / static_cast<float>(kTickCount);
     const float x = p0.x + pad_l + t * plot_w;
@@ -497,14 +536,14 @@ void ImguiClient::render_line_plot(const char *label, const std::deque<float> &s
     ImVec2 last = to_screen(0, values[0]);
     for (int i = 1; i < static_cast<int>(values.size()); ++i) {
       const ImVec2 cur = to_screen(i, values[i]);
-      draw->AddLine(last, cur, IM_COL32(80, 220, 120, 255), 1.5F);
+      draw->AddLine(last, cur, line_color, 1.5F);
       last = cur;
     }
     draw->AddCircleFilled(to_screen(static_cast<int>(values.size() - 1), values.back()),
-                          3.0F, IM_COL32(255, 120, 80, 255));
+                          3.0F, IM_COL32(255, 180, 80, 255));
   } else {
     draw->AddCircleFilled(to_screen(0, values[0]), 3.0F,
-                          IM_COL32(255, 120, 80, 255));
+                          IM_COL32(255, 180, 80, 255));
   }
 
   ImGui::EndChild();
@@ -551,6 +590,16 @@ void ImguiClient::render_xy_plot(const char *label, const std::deque<ImVec2> &se
     max_x = std::max(max_x, geofence_max[0]);
     min_y = std::min(min_y, geofence_min[1]);
     max_y = std::max(max_y, geofence_max[1]);
+  }
+
+  // 10% margin beyond data/geofence
+  {
+    float mx = (max_x - min_x) * 0.1f;
+    float my = (max_y - min_y) * 0.1f;
+    if (mx < 0.5f) mx = 0.5f;
+    if (my < 0.5f) my = 0.5f;
+    min_x -= mx; max_x += mx;
+    min_y -= my; max_y += my;
   }
 
   if (std::abs(max_x - min_x) < 1e-6F) {
@@ -607,6 +656,18 @@ void ImguiClient::render_xy_plot(const char *label, const std::deque<ImVec2> &se
                   IM_COL32(110, 110, 135, 220), 1.4F);
   }
 
+  // Axis labels
+  {
+    const char *xl = "X (m)";
+    const char *yl = "Y (m)";
+    float xlw = ImGui::CalcTextSize(xl).x;
+    float lh = ImGui::GetTextLineHeight();
+    draw->AddText(ImVec2(p0.x + (avail.x - xlw) * 0.5f, p1.y - pad + 3.0f),
+                  IM_COL32(150, 150, 160, 220), xl);
+    draw->AddText(ImVec2(p0.x + 3.0f, p0.y + (avail.y - lh) * 0.5f),
+                  IM_COL32(150, 150, 160, 220), yl);
+  }
+
   if (geofence_valid) {
     const ImVec2 gf_min = to_screen(ImVec2(geofence_min[0], geofence_min[1]));
     const ImVec2 gf_max = to_screen(ImVec2(geofence_max[0], geofence_max[1]));
@@ -640,98 +701,215 @@ void ImguiClient::render_xy_plot(const char *label, const std::deque<ImVec2> &se
   ImGui::EndChild();
 }
 
+void ImguiClient::render_header_bar(const ServerPayload &drone) {
+  RenderPhaseBadge(drone.mission_phase);
+  ImGui::SameLine(0, 8.0f);
+  RenderOnOffBadge(drone.armed_state, "ARMED", "DISARMED");
+  ImGui::SameLine(0, 6.0f);
+  RenderOnOffBadge(drone.offboard_state, "OFFBOARD", "NO OFFBRD");
+  ImGui::SameLine(0, 10.0f);
+
+  bool batt_valid = drone.battery_remaining > 0.0f;
+  float batt_pct = drone.battery_remaining * 100.0f;
+  ImU32 batt_color = batt_pct > 40.0f ? IM_COL32(80, 220, 120, 255) :
+                     batt_pct > 15.0f ? IM_COL32(255, 210, 80, 255) :
+                                        IM_COL32(255, 80, 80, 255);
+  if (batt_valid) {
+    ImGui::TextColored(ImColor(batt_color), "Bat %.0f%% %.1fV", batt_pct, drone.battery_voltage);
+  } else if (drone.battery_voltage > 0.1f) {
+    ImGui::TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "Bat %.1fV", drone.battery_voltage);
+  } else {
+    ImGui::TextColored(ImVec4(0.45f, 0.45f, 0.45f, 1.0f), "Bat ---");
+  }
+
+  if (drone.guard_flags != 0) {
+    ImGui::SameLine(0, 16.0f);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    const char *t = "GUARD";
+    float tw = ImGui::CalcTextSize(t).x + 12.0f;
+    float th = ImGui::GetTextLineHeight() + 6.0f;
+    auto *draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(p, ImVec2(p.x + tw, p.y + th), IM_COL32(200, 50, 30, 220), 4.0f);
+    draw->AddRect(p, ImVec2(p.x + tw, p.y + th), IM_COL32(255, 80, 60, 255), 4.0f, 0, 1.5f);
+    draw->AddText(ImVec2(p.x + 6.0f, p.y + 3.0f), IM_COL32(255, 255, 255, 255), t);
+    ImGui::Dummy(ImVec2(tw, th));
+  }
+}
+
 void ImguiClient::render_status_panel(uint8_t id, const ServerPayload &drone) {
   ImGui::SeparatorText("Status");
 
-  int phase_idx = drone.mission_phase;
-  const bool phase_ok = phase_idx >= 0 &&
-                        phase_idx < static_cast<int>(std::size(MissionPhaseName));
-  ImGui::Text("Drone ID: %u", id);
-  ImGui::Text("Phase: %s", phase_ok ? MissionPhaseName[phase_idx] : "UNKNOWN");
-  ImGui::Text("Offboard:");
-  ImGui::SameLine();
-  ImGui::TextColored(drone.offboard_state ? ImVec4(0.20F, 0.95F, 0.35F, 1.0F)
-                                          : ImVec4(0.95F, 0.20F, 0.20F, 1.0F),
-                     drone.offboard_state ? "ON" : "OFF");
-  ImGui::Text("Armed:");
-  ImGui::SameLine();
-  ImGui::TextColored(drone.armed_state ? ImVec4(0.20F, 0.95F, 0.35F, 1.0F)
-                                       : ImVec4(0.95F, 0.20F, 0.20F, 1.0F),
-                     drone.armed_state ? "ARMED" : "DISARMED");
-  ImGui::Text("RC Gate: %s", drone.use_rc ? "ON" : "OFF");
-  ImGui::Text("Battery: %.2fV (%.1f%%)", drone.battery_voltage,
-              drone.battery_remaining * 100.0f);
-  ImGui::Text("Pos xyz: %.2f %.2f %.2f", drone.pos[0], drone.pos[1], drone.pos[2]);
-  ImGui::Text("Vel xyz: %.2f %.2f %.2f", drone.vel[0], drone.vel[1], drone.vel[2]);
-  ImGui::Text("RPY deg: %.1f %.1f %.1f", drone.roll_deg, drone.pitch_deg,
-              drone.yaw_deg);
-  ImGui::Text("odom hz: %.1f, cmd hz: %.1f", drone.odom_hz, drone.cmdctrl_hz);
-  ImGui::Text("odom age: %.1f ms", drone.odom_age_ms);
+  if (ImGui::BeginTable("StatusTable", 2, ImGuiTableFlags_SizingFixedFit)) {
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("Pos XYZ:");
+    ImGui::TableNextColumn(); ImGui::Text("%.2f  %.2f  %.2f", drone.pos[0], drone.pos[1], drone.pos[2]);
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("Vel XYZ:");
+    ImGui::TableNextColumn(); ImGui::Text("%.2f  %.2f  %.2f", drone.vel[0], drone.vel[1], drone.vel[2]);
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("RPY (deg):");
+    ImGui::TableNextColumn(); ImGui::Text("R%.1f  P%.1f  Y%.1f", drone.roll_deg, drone.pitch_deg, drone.yaw_deg);
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("Speed:");
+    ImGui::TableNextColumn(); ImGui::Text("%.2f m/s  Tilt:%.1f°", drone.speed_norm, drone.tilt_deg);
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("ODom:");
+    ImGui::TableNextColumn();
+    ImGui::TextColored(drone.odom_age_ms > 500.0f ? ImVec4(0.95f, 0.4f, 0.4f, 1.0f)
+                                                    : ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                       "%.0f Hz  age:%.0f ms", drone.odom_hz, drone.odom_age_ms);
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("Cmd Ctrl:");
+    ImGui::TableNextColumn();
+    ImGui::TextColored(drone.cmdctrl_hz > 0 ? ImVec4(0.7f, 0.7f, 0.7f, 1.0f)
+                                            : ImVec4(0.55f, 0.55f, 0.55f, 1.0f),
+                       "%.0f Hz  age:%.0f ms", drone.cmdctrl_hz, drone.cmd_age_ms);
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("Alive:");
+    ImGui::TableNextColumn();
+    if (drone.client_cmd_age_ms < 0.0f) {
+      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "---");
+    } else {
+      ImGui::TextColored(drone.client_cmd_age_ms > 1000.0f ? ImVec4(0.95f, 0.5f, 0.2f, 1.0f)
+                                                            : ImVec4(0.7f, 0.9f, 0.7f, 1.0f),
+                         "%.0f ms ago", drone.client_cmd_age_ms);
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Time since last client message (heartbeat every %.0f ms)",
+                         drone.client_cmd_age_ms > 0 ? 200.0f : 0.0f);
+    }
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("RC Gate:");
+    ImGui::TableNextColumn();
+    ImGui::TextColored(drone.use_rc ? ImVec4(0.95f, 0.7f, 0.2f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                       drone.use_rc ? "ON" : "OFF");
+    ImGui::TableNextColumn(); ImGui::TextUnformatted("Guards:");
+    ImGui::TableNextColumn();
+    if (drone.guard_flags == 0) {
+      ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "none");
+    } else {
+      std::string flags;
+      if (drone.guard_flags & 1) flags += "MAVROS ";
+      if (drone.guard_flags & 2) flags += "ODOM ";
+      if (drone.guard_flags & 4) flags += "UI ";
+      if (drone.guard_flags & 8) flags += "BATT ";
+      if (drone.guard_flags & 16) flags += "GEO ";
+      if (drone.guard_flags & 32) flags += "ATT ";
+      if (drone.guard_flags & 64) flags += "VEL ";
+      if (drone.guard_flags & 128) flags += "ODOM_HZ ";
+      if (drone.guard_flags & 256) flags += "RC_LOST ";
+      if (drone.guard_flags & 512) flags += "RC_REQ ";
+      ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "%s", flags.c_str());
+    }
+    ImGui::EndTable();
+  }
 }
 
 void ImguiClient::render_command_panel(uint8_t id, const ServerPayload &drone) {
-  ImGui::SeparatorText("Commands");
-
+  ImGui::SeparatorText("Keyboard & Hover");
   const bool active = keyboard_listener_active_ && keyboard_target_id_ == id;
-  ImGui::Text("Keyboard Listener:");
-  ImGui::SameLine();
-  ImGui::TextColored(active ? ImVec4(0.1F, 0.9F, 0.2F, 1.0F)
-                            : ImVec4(0.95F, 0.25F, 0.25F, 1.0F),
-                     active ? "Active" : "Deactive");
-  if (ImGui::Button(active ? "Deactivate Keyboard" : "Activate Keyboard")) {
-    if (active) {
-      keyboard_listener_active_ = false;
-      keyboard_target_id_ = -1;
-    } else {
-      keyboard_listener_active_ = true;
-      keyboard_target_id_ = id;
-    }
-  }
 
-  ImGui::Text("Ctrl Frame: %s", ctrl_in_world_ ? "WORLD" : "BODY");
-  if (ImGui::Button("Toggle Ctrl Frame (C)")) {
-    ctrl_in_world_ = !ctrl_in_world_;
+  ImGui::TextColored(active ? ImVec4(0.2f, 0.95f, 0.35f, 1.0f)
+                            : ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                     active ? "ACTIVE" : "inactive");
+  ImGui::SameLine();
+  if (ImGui::SmallButton(active ? "Stop" : "Start")) {
+    if (active) { keyboard_listener_active_ = false; keyboard_target_id_ = -1; }
+    else { keyboard_listener_active_ = true; keyboard_target_id_ = id; }
   }
-  ImGui::TextUnformatted("Keys: W/S/A/D XY, R/F Z, Q/E Yaw, Space Hover, J Disarm, L Land");
-  ImGui::SetNextItemWidth(140.0F);
-  ImGui::InputFloat("Vel XY (m/s)", &keyboard_vel_xy_, 0.1F, 0.5F, "%.2f");
-  ImGui::SetNextItemWidth(140.0F);
-  ImGui::InputFloat("Vel Z (m/s)", &keyboard_vel_z_, 0.05F, 0.2F, "%.2f");
-  ImGui::SetNextItemWidth(140.0F);
-  ImGui::InputFloat("Vel Yaw (rad/s)", &keyboard_vel_yaw_, 0.1F, 0.5F, "%.2f");
+  ImGui::SameLine();
+  ImGui::TextUnformatted(ctrl_in_world_ ? "WORLD" : "BODY");
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Flip")) ctrl_in_world_ = !ctrl_in_world_;
+
+  ImGui::TextDisabled("W/A/S/D XY  R/F Z  Q/E Yaw  Space Hover  J Disarm  L Land");
+
+  // Row 1: Velocity inputs
+  float fw = (ImGui::GetContentRegionAvail().x - 8.0f) / 3.0f;
+  ImGui::PushItemWidth(fw);
+  ImGui::InputFloat("##VelXY", &keyboard_vel_xy_, 0.1f, 0.5f, "XY:%.1f m/s");
+  ImGui::SameLine(0, 4.0f);
+  ImGui::InputFloat("##VelZ", &keyboard_vel_z_, 0.05f, 0.2f, "Z:%.1f m/s");
+  ImGui::SameLine(0, 4.0f);
+  ImGui::InputFloat("##VelYaw", &keyboard_vel_yaw_, 0.1f, 0.5f, "Yaw:%.1f rad/s");
+  ImGui::PopItemWidth();
   keyboard_vel_xy_ = std::max(0.0F, keyboard_vel_xy_);
   keyboard_vel_z_ = std::max(0.0F, keyboard_vel_z_);
   keyboard_vel_yaw_ = std::max(0.0F, keyboard_vel_yaw_);
 
-  for (const auto &cmd : command_vec_) {
-    if (ImGui::Button(CommandStr[static_cast<int>(cmd)])) {
-      send_simple_command(id, cmd);
-    }
-  }
-
+  // Row 2: Hover target
   std::array<float, 4> h{};
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     if (hover_input_map_.find(id) == hover_input_map_.end()) {
       hover_input_map_[id] = {
-          drone.hover_pos[0],
-          drone.hover_pos[1],
-          drone.hover_pos[2],
+          drone.hover_pos[0], drone.hover_pos[1], drone.hover_pos[2],
           static_cast<float>(to_yaw({drone.hover_quat[0], drone.hover_quat[1],
                                      drone.hover_quat[2], drone.hover_quat[3]})),
       };
     }
     h = hover_input_map_[id];
   }
-
-  ImGui::InputFloat3("Hover xyz", h.data(), "%.2f");
-  ImGui::InputFloat("Hover yaw", &h[3], 0.05f, 0.2f, "%.2f");
+  float hfw = (ImGui::GetContentRegionAvail().x - 12.0f) / 5.0f;
+  ImGui::PushItemWidth(hfw);
+  ImGui::InputFloat("##HX", &h[0], 0.0f, 0.0f, "X:%.1f"); ImGui::SameLine(0, 4.0f);
+  ImGui::InputFloat("##HY", &h[1], 0.0f, 0.0f, "Y:%.1f"); ImGui::SameLine(0, 4.0f);
+  ImGui::InputFloat("##HZ", &h[2], 0.0f, 0.0f, "Z:%.1f"); ImGui::SameLine(0, 4.0f);
+  ImGui::InputFloat("##HYaw", &h[3], 0.0f, 0.0f, "Y:%.1f");
+  ImGui::PopItemWidth();
+  ImGui::SameLine(0, 4.0f);
+  if (ImGui::SmallButton("Send")) {
+    send_hover_target(id, h);
+  }
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     hover_input_map_[id] = h;
   }
-  if (ImGui::Button("Send Hover Target")) {
-    send_hover_target(id, h);
+
+  // --- Commands ---
+  ImGui::Spacing();
+  ImGui::SeparatorText("Commands");
+
+  float half_w = (ImGui::GetContentRegionAvail().x - 4.0f) * 0.5f;
+
+  if (ImGui::Button("ARM", ImVec2(half_w, 0))) send_simple_command(id, ClientCommand::ARM);
+  ImGui::SameLine(0, 4.0f);
+  if (ImGui::Button("ENTER OFFBOARD", ImVec2(half_w, 0))) send_simple_command(id, ClientCommand::ENTER_OFFBOARD);
+
+  if (ImGui::Button("TAKEOFF", ImVec2(half_w, 0))) send_simple_command(id, ClientCommand::TAKEOFF);
+  ImGui::SameLine(0, 4.0f);
+  if (ImGui::Button("ALLOW CMD CTRL", ImVec2(half_w, 0))) send_simple_command(id, ClientCommand::ALLOW_CMD_CTRL);
+
+  if (ImGui::Button("FORCE HOVER", ImVec2(half_w, 0))) send_simple_command(id, ClientCommand::FORCE_HOVER);
+  ImGui::SameLine(0, 4.0f);
+  if (ImGui::Button("LAND", ImVec2(half_w, 0))) send_simple_command(id, ClientCommand::LAND);
+
+  if (ImGui::Button("EXIT OFFBOARD", ImVec2(half_w, 0))) send_simple_command(id, ClientCommand::EXIT_OFFBOARD);
+  ImGui::SameLine(0, 4.0f);
+  if (ImGui::Button("FORCE DISARM", ImVec2(half_w, 0))) {
+    show_disarm_confirm_ = true;
+    disarm_confirm_target_id_ = static_cast<int>(id);
+  }
+
+  // Confirmation popup
+  if (show_disarm_confirm_ && disarm_confirm_target_id_ == static_cast<int>(id)) {
+    ImGui::OpenPopup("Confirm Force Disarm");
+  }
+  ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+  ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if (ImGui::BeginPopupModal("Confirm Force Disarm", nullptr,
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::Text("FORCE DISARM drone %d?", id);
+    ImGui::TextColored(ImVec4(0.95f, 0.2f, 0.2f, 1.0f),
+                       "This will immediately disarm the drone!");
+    ImGui::Separator();
+    if (ImGui::Button("CANCEL", ImVec2(120, 0))) {
+      ImGui::CloseCurrentPopup();
+      show_disarm_confirm_ = false;
+    }
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 40, 255));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 60, 60, 255));
+    if (ImGui::Button("CONFIRM DISARM", ImVec2(150, 0))) {
+      send_simple_command(static_cast<uint8_t>(disarm_confirm_target_id_),
+                          ClientCommand::FORCE_DISARM);
+      ImGui::CloseCurrentPopup();
+      show_disarm_confirm_ = false;
+    }
+    ImGui::PopStyleColor(2);
+    ImGui::EndPopup();
   }
 }
 
@@ -872,62 +1050,85 @@ void ImguiClient::handle_keyboard_control() {
   }
 }
 
-void ImguiClient::render_safety_panel(uint8_t id, const ServerPayload &drone) {
+void ImguiClient::render_safety_popup(uint8_t id) {
   SafetyEditorState s{};
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     s = safety_editor_map_[id];
   }
-  ImGui::SeparatorText("Safety Online Config");
 
-  ImGui::Checkbox("Enable Geofence", &s.enable_geofence);
-  ImGui::Checkbox("Enable Attitude Fence", &s.enable_attitude_fence);
-  ImGui::InputFloat3("Geofence Min", s.geofence_min, "%.2f");
-  ImGui::InputFloat3("Geofence Max", s.geofence_max, "%.2f");
-  ImGui::InputFloat("Max Roll Deg", &s.max_roll_deg, 1.0f, 5.0f, "%.1f");
-  ImGui::InputFloat("Max Pitch Deg", &s.max_pitch_deg, 1.0f, 5.0f, "%.1f");
-  ImGui::InputFloat("Max Yaw Deg", &s.max_yaw_deg, 1.0f, 5.0f, "%.1f");
+  ImGui::SetNextWindowSize(ImVec2(420, 360), ImGuiCond_Appearing);
+  if (ImGui::BeginPopupModal("Safety Limits", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::Checkbox("Geofence", &s.enable_geofence);
+    ImGui::SameLine();
+    ImGui::Checkbox("Attitude Fence", &s.enable_attitude_fence);
 
-  const bool geo_valid = s.geofence_min[0] <= s.geofence_max[0] &&
-                         s.geofence_min[1] <= s.geofence_max[1] &&
-                         s.geofence_min[2] <= s.geofence_max[2];
-  const bool rpy_valid = valid_limit(s.max_roll_deg) && valid_limit(s.max_pitch_deg) &&
-                         valid_limit(s.max_yaw_deg);
-  const bool valid = geo_valid && rpy_valid;
+    ImGui::Separator();
 
-  if (!valid) {
-    ImGui::TextColored(ImVec4(1, 0.2f, 0.2f, 1),
-                       "Invalid limits: require min<=max; limit==-1 or (0,180]");
-  }
+    float fw = (ImGui::GetContentRegionAvail().x - 8.0f) * 0.5f;
+    ImGui::PushItemWidth(fw);
+    ImGui::TextUnformatted("Geofence Min:"); ImGui::SameLine();
+    ImGui::InputFloat3("##GeoMin", s.geofence_min, "%.1f");
+    ImGui::TextUnformatted("Geofence Max:"); ImGui::SameLine();
+    ImGui::InputFloat3("##GeoMax", s.geofence_max, "%.1f");
+    ImGui::PopItemWidth();
 
-  ImGui::BeginDisabled(!valid);
-  if (ImGui::Button("Apply Safety Limits")) {
-    ClientPayload payload{};
-    payload.id = id;
-    payload.command = ClientCommand::SET_SAFETY_LIMITS;
-    payload.timestamp = to_uint64(clock::now());
+    ImGui::Separator();
 
-    SafetyLimitsPayload limits{};
-    for (int i = 0; i < 3; ++i) {
-      limits.geofence_min[i] = s.geofence_min[i];
-      limits.geofence_max[i] = s.geofence_max[i];
+    ImGui::TextUnformatted("Max R/P/Y (deg):");
+    ImGui::PushItemWidth(80.0f);
+    ImGui::InputFloat("##Rlim", &s.max_roll_deg, 1.0f, 5.0f, "%.0f"); ImGui::SameLine(0, 4.0f);
+    ImGui::TextUnformatted("R"); ImGui::SameLine(0, 4.0f);
+    ImGui::InputFloat("##Plim", &s.max_pitch_deg, 1.0f, 5.0f, "%.0f"); ImGui::SameLine(0, 4.0f);
+    ImGui::TextUnformatted("P"); ImGui::SameLine(0, 4.0f);
+    ImGui::InputFloat("##Ylim", &s.max_yaw_deg, 1.0f, 5.0f, "%.0f"); ImGui::SameLine(0, 4.0f);
+    ImGui::TextUnformatted("Y");
+    ImGui::PopItemWidth();
+
+    const bool geo_valid = s.geofence_min[0] <= s.geofence_max[0] &&
+                           s.geofence_min[1] <= s.geofence_max[1] &&
+                           s.geofence_min[2] <= s.geofence_max[2];
+    const bool rpy_valid = valid_limit(s.max_roll_deg) && valid_limit(s.max_pitch_deg) &&
+                           valid_limit(s.max_yaw_deg);
+    const bool valid = geo_valid && rpy_valid;
+
+    ImGui::Separator();
+
+    ImGui::BeginDisabled(!valid);
+    if (ImGui::Button("Apply", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+      ClientPayload payload{};
+      payload.id = id;
+      payload.command = ClientCommand::SET_SAFETY_LIMITS;
+      payload.timestamp = to_uint64(clock::now());
+      SafetyLimitsPayload limits{};
+      for (int i = 0; i < 3; ++i) {
+        limits.geofence_min[i] = s.geofence_min[i];
+        limits.geofence_max[i] = s.geofence_max[i];
+      }
+      limits.max_roll_deg = s.max_roll_deg;
+      limits.max_pitch_deg = s.max_pitch_deg;
+      limits.max_yaw_deg = s.max_yaw_deg;
+      limits.enable_geofence = s.enable_geofence ? 1 : 0;
+      limits.enable_attitude_fence = s.enable_attitude_fence ? 1 : 0;
+      std::memcpy(payload.data, &limits, sizeof(limits));
+      px4_client_.pub_client(payload);
+      ImGui::CloseCurrentPopup();
     }
-    limits.max_roll_deg = s.max_roll_deg;
-    limits.max_pitch_deg = s.max_pitch_deg;
-    limits.max_yaw_deg = s.max_yaw_deg;
-    limits.enable_geofence = s.enable_geofence ? 1 : 0;
-    limits.enable_attitude_fence = s.enable_attitude_fence ? 1 : 0;
+    ImGui::EndDisabled();
+    if (!valid) {
+      ImGui::TextColored(ImVec4(0.95f, 0.2f, 0.2f, 1.0f), "Invalid limits");
+    }
 
-    std::memcpy(payload.data, &limits, sizeof(limits));
-    px4_client_.pub_client(payload);
-  }
-  ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Close")) {
+      ImGui::CloseCurrentPopup();
+    }
 
-  ImGui::Text("Current telemetry limits: R=%.1f P=%.1f Y=%.1f", drone.max_roll_deg,
-              drone.max_pitch_deg, drone.max_yaw_deg);
-  {
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    safety_editor_map_[id] = s;
+    {
+      std::lock_guard<std::mutex> lock(data_mutex_);
+      safety_editor_map_[id] = s;
+    }
+    ImGui::EndPopup();
   }
 }
 
@@ -936,32 +1137,47 @@ void ImguiClient::render_plot_panel(uint8_t id, const ServerPayload &drone) {
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
     const auto it = history_map_.find(id);
-    if (it == history_map_.end()) {
-      return;
-    }
+    if (it == history_map_.end()) return;
     h = it->second;
   }
   const float sample_hz =
       static_cast<float>(std::max<uint32_t>(1, px4_client_.transport_paras().telemetry_hz));
-  const ImVec2 line_sz(0, 92);
 
-  ImGui::SeparatorText("Plots");
-  ImGui::BeginChild("PlotPanel", ImVec2(0, 0), true);
-  render_xy_plot("XY Position Trace", h.xy_trace, ImVec2(340, 240),
+  float avail_h = ImGui::GetContentRegionAvail().y;
+  // XY plot: 38% of available height, bounded
+  float xy_h = std::clamp(avail_h * 0.38f, 130.0f, 280.0f);
+  // Remaining for 5 line plots (Z + Thrust + ωx + ωy + ωz)
+  float remaining = std::max(40.0f, avail_h - xy_h - 20.0f);
+  float line_h = std::clamp(remaining / 5.0f, 38.0f, 90.0f);
+
+  if (ImGui::SmallButton("Safety")) {
+    ImGui::OpenPopup("Safety Limits");
+  }
+  render_xy_plot("##XYPlot", h.xy_trace, ImVec2(0, xy_h),
                  drone.geofence_min, drone.geofence_max,
                  drone.enable_geofence != 0);
-  ImGui::Dummy(ImVec2(0, 4));
+  ImGui::Spacing();
 
-  render_line_plot("x", h.x, line_sz, sample_hz);
-  render_line_plot("y", h.y, line_sz, sample_hz);
-  render_line_plot("z", h.z, line_sz, sample_hz);
-  ImGui::Dummy(ImVec2(0, 4));
+  float z_range = drone.geofence_max[2] - drone.geofence_min[2];
+  float z_margin = std::max(0.2f, z_range * 0.05f);
+  float z_min = drone.geofence_min[2] - z_margin;
+  float z_max = drone.geofence_max[2] + z_margin;
+  render_line_plot("Z (m)", h.z, ImVec2(0, line_h), sample_hz, z_min, z_max,
+                   IM_COL32(80, 220, 100, 255));
+  ImGui::Spacing();
 
-  render_line_plot("cmd thrust", h.thrust, line_sz, sample_hz);
-  render_line_plot("cmd omega_x", h.omega_x, line_sz, sample_hz);
-  render_line_plot("cmd omega_y", h.omega_y, line_sz, sample_hz);
-  render_line_plot("cmd omega_z", h.omega_z, line_sz, sample_hz);
-  ImGui::EndChild();
+  render_line_plot("Thrust", h.thrust, ImVec2(0, line_h), sample_hz, 0.0F, 1.0F,
+                   IM_COL32(255, 200, 80, 255));
+  float w_margin = (drone.omega_max - drone.omega_min) * 0.05f;
+  float w_min = drone.omega_min - w_margin;
+  float w_max = drone.omega_max + w_margin;
+  render_line_plot("Omega X", h.omega_x, ImVec2(0, line_h), sample_hz, w_min, w_max,
+                   IM_COL32(255, 100, 100, 255));
+  render_line_plot("Omega Y", h.omega_y, ImVec2(0, line_h), sample_hz, w_min, w_max,
+                   IM_COL32(80, 180, 255, 255));
+  render_line_plot("Omega Z", h.omega_z, ImVec2(0, line_h), sample_hz, w_min, w_max,
+                   IM_COL32(180, 130, 255, 255));
+  render_safety_popup(id);
 }
 
 void ImguiClient::publish_heartbeat() {
@@ -998,87 +1214,96 @@ void ImguiClient::publish_heartbeat() {
 
 void ImguiClient::render_window() {
   ImGuiIO &io = ImGui::GetIO();
-  (void)io;
-
   ImGuiViewport *viewport = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(viewport->WorkPos);
   ImGui::SetNextWindowSize(viewport->WorkSize);
 
-  ImGui::Begin("UISC Px4 Client", nullptr,
+  ImGui::Begin("PX4CTRL Client", nullptr,
                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
                    ImGuiWindowFlags_NoBackground);
 
-  ImGui::Text("UISC Px4 Client (Zenoh)");
-  ImGui::Text("Frame: %.2f ms (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-
-  const float avail_h = ImGui::GetContentRegionAvail().y;
-  const float logs_h = std::clamp(avail_h * 0.28F, 180.0F, 320.0F);
-  const float top_h = std::max(220.0F, avail_h - logs_h - ImGui::GetStyle().ItemSpacing.y);
-
-  ImGui::BeginChild("MainContent", ImVec2(0, top_h), true);
+  // --- Collect drones ---
+  std::vector<std::pair<uint8_t, ServerPayload>> drones;
   {
-    std::vector<std::pair<uint8_t, ServerPayload>> drones;
-    {
-      std::lock_guard<std::mutex> lock(data_mutex_);
-      drones.assign(server_data_map_.begin(), server_data_map_.end());
-    }
-
-    if (drones.empty()) {
-      ImGui::Text("No drone telemetry yet");
-    }
-
-    for (const auto &[id, drone] : drones) {
-      ImGui::PushID(id);
-      ImGui::Separator();
-      ImGui::Text("Drone %u", id);
-
-      if (ImGui::BeginTable("DroneMain", 2,
-                            ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersV |
-                                ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableNextColumn();
-        render_status_panel(id, drone);
-        render_safety_panel(id, drone);
-
-        ImGui::TableNextColumn();
-        render_command_panel(id, drone);
-        render_plot_panel(id, drone);
-
-        ImGui::EndTable();
-      }
-
-      ImGui::PopID();
-    }
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    drones.assign(server_data_map_.begin(), server_data_map_.end());
   }
-  ImGui::EndChild();
+
+  if (drones.empty()) {
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Waiting for telemetry...");
+    // Still process keyboard + heartbeats even without drones
+    handle_keyboard_control();
+    publish_heartbeat();
+    ImGui::End();
+    return;
+  }
+
+  float body_h = ImGui::GetContentRegionAvail().y;
+
+  for (const auto &[id, drone] : drones) {
+    ImGui::PushID(id);
+
+    // Title + FPS on same line as header start
+    ImGui::Text("PX4CTRL #%u", id);
+    ImGui::SameLine(0, 10.0f);
+    render_header_bar(drone);
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 100.0f);
+    ImGui::TextColored(ImVec4(0.45f, 0.45f, 0.55f, 1.0f), "%.0f FPS", io.Framerate);
+
+    ImGui::Separator();
+
+    if (ImGui::BeginTable("Body", 2,
+                          ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV |
+                              ImGuiTableFlags_SizingStretchProp,
+                          ImVec2(0, body_h))) {
+      float w = ImGui::GetContentRegionAvail().x;
+      float left_w = std::clamp(w * 0.32f, 260.0f, 380.0f);
+      ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_WidthFixed, left_w);
+      ImGui::TableSetupColumn("Plots", ImGuiTableColumnFlags_WidthStretch);
+
+      ImGui::TableNextColumn();
+      ImGui::BeginChild("LeftCol", ImVec2(0, 0), false);
+      render_status_panel(id, drone);
+      ImGui::Spacing();
+      render_command_panel(id, drone);
+
+      // Log tail in left column
+      ImGui::Spacing();
+      ImGui::SeparatorText("Logs");
+      {
+        std::deque<Px4Client::LogEntry> logs_snapshot;
+        {
+          std::lock_guard<std::mutex> lock(data_mutex_);
+          logs_snapshot = log_data_;
+        }
+        int show_n = std::min(6, static_cast<int>(logs_snapshot.size()));
+        for (int i = static_cast<int>(logs_snapshot.size()) - show_n; i < static_cast<int>(logs_snapshot.size()); ++i) {
+          ImGui::PushStyleColor(ImGuiCol_Text, log_color_for_level(logs_snapshot[i].level));
+          ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + ImGui::GetContentRegionAvail().x);
+          ImGui::TextUnformatted(logs_snapshot[i].text.c_str());
+          ImGui::PopTextWrapPos();
+          ImGui::PopStyleColor();
+        }
+      }
+      if (ImGui::SmallButton("Clear")) {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        log_data_.clear();
+      }
+      ImGui::EndChild();
+
+      ImGui::TableNextColumn();
+      render_plot_panel(id, drone);
+
+      ImGui::EndTable();
+    }
+
+    ImGui::PopID();
+  }
 
   handle_keyboard_control();
   publish_heartbeat();
-
-  ImGui::SeparatorText("Logs");
-  ImGui::BeginChild("LogContainer", ImVec2(0, 0), true);
-  {
-    std::deque<Px4Client::LogEntry> logs_snapshot;
-    {
-      std::lock_guard<std::mutex> lock(data_mutex_);
-      logs_snapshot = log_data_;
-    }
-
-    const float prev_scroll_y = ImGui::GetScrollY();
-    const float prev_scroll_max = ImGui::GetScrollMaxY();
-    const bool stick_to_bottom = (prev_scroll_y >= prev_scroll_max - 8.0F);
-
-    for (const auto &log : logs_snapshot) {
-      ImGui::PushStyleColor(ImGuiCol_Text, log_color_for_level(log.level));
-      ImGui::TextUnformatted(log.text.c_str());
-      ImGui::PopStyleColor();
-    }
-    if (stick_to_bottom) {
-      ImGui::SetScrollHereY(1.0f);
-    }
-  }
-  ImGui::EndChild();
-
   ImGui::End();
 }
 

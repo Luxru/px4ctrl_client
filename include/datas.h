@@ -45,6 +45,9 @@ struct ServerPayload {
   float roll_deg;
   float pitch_deg;
   float yaw_deg;
+  float cmd_age_ms;     // age of external ctrl_command stream
+  float omega_min;      // min bodyrate for plot scaling
+  float omega_max;      // max bodyrate for plot scaling
 
   float geofence_min[3];
   float geofence_max[3];
@@ -58,19 +61,16 @@ struct ServerPayload {
 };
 
 enum class MissionPhase {
-  WAIT_FOR_RC,
   STANDBY,
   TAKEOFF,
   HOVER,
-  CMD_CTRL_READY,
   CMD_CTRL,
   LANDING,
   FAILSAFE,
 };
 
 static constexpr const char *MissionPhaseName[] = {
-    "WAIT_FOR_RC",  "STANDBY", "TAKEOFF",   "HOVER",
-    "CMD_CTRL_READY", "CMD_CTRL", "LANDING", "FAILSAFE",
+    "STANDBY", "TAKEOFF", "HOVER", "CMD_CTRL", "LANDING", "FAILSAFE",
 };
 
 enum class ClientCommand : uint32_t {
@@ -120,7 +120,7 @@ static_assert(sizeof(SafetyLimitsPayload) <= sizeof(ClientPayload::data),
               "SafetyLimitsPayload exceeds client payload data area");
 static_assert(sizeof(ClientCommand) == sizeof(uint32_t),
               "ClientCommand wire size must stay 4 bytes");
-static_assert(sizeof(ServerPayload) == 232,
+static_assert(sizeof(ServerPayload) == 240,
               "ServerPayload wire size changed; update client/server together");
 static_assert(sizeof(ClientPayload) == 88,
               "ClientPayload wire size changed; update client/server together");
